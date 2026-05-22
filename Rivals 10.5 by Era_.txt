@@ -1,0 +1,833 @@
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local runS = game:GetService("RunService")
+local pl = game:GetService("Players")
+local lp = pl.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
+local ws = game:GetService("Workspace")
+local camera = workspace.CurrentCamera
+local UIS = game:GetService("UserInputService")
+local mousePPos = UIS:GetMouseLocation()
+runS.RenderStepped:Connect(function() mousePPos = UIS:GetMouseLocation() end)
+local Center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+
+local base = 'https://raw.githubusercontent.com/17kShotsss/UI-LIBRARY/main/'
+local Library = loadstring(game:HttpGet(base .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(base .. 'addons/ThemeManager.lua'))()
+local SaveManager = loadstring(game:HttpGet(base .. 'addons/SaveManager.lua'))()
+
+local Window = Library:CreateWindow({
+    Title = 'GalaxyHubz | Rivals',
+    Center = true, 
+    AutoShow = true,
+})
+
+local Tabs = {
+    Main = Window:AddTab('Main'),
+    Player = Window:AddTab('Player'),
+    Visuals = Window:AddTab('Visual'),
+    UISettings = Window:AddTab('UI Settings'),
+}
+
+local WeaponGroupBox = Tabs.Main:AddLeftGroupbox('Weapon & Combat')
+local AimBotGroupBox = Tabs.Main:AddRightGroupbox('Silent Aim Settings')
+local SkinGroupBox = Tabs.Main:AddRightGroupbox('Cosmetics')
+
+local PlayerMovementBox = Tabs.Player:AddLeftGroupbox('Movement')
+
+local VisualsGroupBox = Tabs.Visuals:AddLeftGroupbox('ESP Settings')
+local FixLagGroupBox = Tabs.Visuals:AddRightGroupbox('Performance Settings')
+
+local Config = {
+    NoRecoil = false,
+    UnlockSkins = false,
+    EspBox = false,
+    TPWalk = false,
+    TPWalkSpeed = 1
+}
+
+local FullSettings = {
+    AimBot = {
+        Checks = {
+            TeamCheck = true,
+            WallCheck = false,
+            AliveCheck = true
+        },
+        Fov = {
+            Enable = true,
+            Visible = true,
+            Thickness = 0.6,
+            Color = Color3.fromRGB(255, 255, 255),
+            LockColor = Color3.fromRGB(255, 0, 0),
+            OffColor = Color3.fromRGB(150, 150, 150),
+            Filled = false,
+            Size = 185
+        },
+        Values = {
+            Enable = false,
+            Toggle = true,
+            HitPart = "HitboxHead",
+            HitPartList = {"Head"},
+            TriggerKey = nil
+        }
+    }
+}
+
+local function toggleTableAttribute(attribute, value)
+    for _, gcVal in pairs(getgc(true)) do
+        if type(gcVal) == "table" and rawget(gcVal, attribute) then
+            gcVal[attribute] = value
+        end
+    end
+end
+
+WeaponGroupBox:AddToggle('NoRecoilToggle', {
+    Text = 'No Recoil / Spread',
+    Default = false,
+})
+
+Toggles.NoRecoilToggle:OnChanged(function()
+    Config.NoRecoil = Toggles.NoRecoilToggle.Value
+    if Config.NoRecoil then
+        toggleTableAttribute("ShootCooldown", 0)
+        toggleTableAttribute("ShootSpread", 0)
+        toggleTableAttribute("ShootRecoil", 0)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do
+        if Config.NoRecoil then
+            toggleTableAttribute("ShootCooldown", 0)
+            toggleTableAttribute("ShootSpread", 0)
+            toggleTableAttribute("ShootRecoil", 0)
+        end
+    end
+end)
+
+WeaponGroupBox:AddToggle('SilentAimToggle', {
+    Text = 'Silent Aim',
+    Default = false,
+})
+
+Toggles.SilentAimToggle:OnChanged(function()
+    FullSettings.AimBot.Values.Enable = Toggles.SilentAimToggle.Value
+end)
+
+AimBotGroupBox:AddToggle('TeamCheckToggle', {
+    Text = 'Team Check',
+    Default = true,
+})
+Toggles.TeamCheckToggle:OnChanged(function()
+    FullSettings.AimBot.Checks.TeamCheck = Toggles.TeamCheckToggle.Value
+end)
+
+AimBotGroupBox:AddToggle('WallCheckToggle', {
+    Text = 'Wall Check',
+    Default = false,
+})
+Toggles.WallCheckToggle:OnChanged(function()
+    FullSettings.AimBot.Checks.WallCheck = Toggles.WallCheckToggle.Value
+end)
+
+AimBotGroupBox:AddToggle('AliveCheckToggle', {
+    Text = 'Alive Check',
+    Default = true,
+})
+Toggles.AliveCheckToggle:OnChanged(function()
+    FullSettings.AimBot.Checks.AliveCheck = Toggles.AliveCheckToggle.Value
+end)
+
+AimBotGroupBox:AddToggle('FovToggle', {
+    Text = 'Enable FOV',
+    Default = true,
+})
+Toggles.FovToggle:OnChanged(function()
+    FullSettings.AimBot.Fov.Enable = Toggles.FovToggle.Value
+end)
+
+WeaponGroupBox:AddSlider('FovSlider', {
+    Text = 'FOV Size',
+    Default = 185,
+    Min = 10,
+    Max = 300,
+    Rounding = 0,
+    Compact = false,
+})
+
+do 
+    local FOV = Drawing.new("Circle")
+    FOV.Visible = FullSettings.AimBot.Fov.Visible
+    FOV.Thickness = FullSettings.AimBot.Fov.Thickness
+    FOV.Color = FullSettings.AimBot.Fov.Color
+    FOV.Filled = FullSettings.AimBot.Fov.Filled
+    FOV.Radius = FullSettings.AimBot.Fov.Size
+    FOV.Position = mousePPos
+
+    runS.RenderStepped:Connect(function() 
+        FOV.Position = mousePPos 
+        FOV.Visible = FullSettings.AimBot.Values.Enable and FullSettings.AimBot.Fov.Enable
+    end)
+
+    Options.FovSlider:OnChanged(function()
+        FullSettings.AimBot.Fov.Size = Options.FovSlider.Value
+        FOV.Radius = FullSettings.AimBot.Fov.Size
+    end)
+
+    coroutine.wrap(function ()
+        local lock = false
+
+        local function GetPartToFov(Part)
+            for _, v in ipairs(pl:GetPlayers()) do
+                if v ~= lp and v.Character and v.Character:FindFirstChild(Part) then
+                    if FullSettings.AimBot.Checks.AliveCheck and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health <= 0 then continue end
+
+                    local ray = workspace:FindPartOnRayWithIgnoreList(
+                        Ray.new(camera.CFrame.Position, 
+                        (v.Character[Part].Position - camera.CFrame.Position).Unit * (v.Character[Part].Position - camera.CFrame.Position).Magnitude),
+                            {lp.Character, camera}
+                    )
+
+                    if FullSettings.AimBot.Checks.WallCheck and (not ray or not ray:IsDescendantOf(v.Character)) then continue end
+                    if FullSettings.AimBot.Checks.TeamCheck and v.Character:FindFirstChild("HumanoidRootPart") and v.Character.HumanoidRootPart:FindFirstChild("TeammateLabel") then continue end
+                    local vPos = camera:WorldToViewportPoint(v.Character[Part].Position)
+                    local distance = (Vector2.new(vPos.X, vPos.Y) - mousePPos).Magnitude
+                    
+                    if FullSettings.AimBot.Fov.Enable and (distance > FullSettings.AimBot.Fov.Size) then continue end
+                    return v
+                end
+            end
+        end
+
+        UIS.InputBegan:Connect(function(input, gameProcessedEvent)
+            if gameProcessedEvent then return end
+            if FullSettings.AimBot.Values.Toggle == false or FullSettings.AimBot.Values.TriggerKey == nil then
+                lock = true
+            else
+                if input.UserInputType == FullSettings.AimBot.Values.TriggerKey then
+                    lock = not lock
+                end
+            end
+        end)
+
+        while task.wait() do
+            if FullSettings.AimBot.Values.Enable then
+                if lp.PlayerGui:FindFirstChild("MainGui") and not lp.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible then
+                    local Target = nil
+                    Target = GetPartToFov(FullSettings.AimBot.Values.HitPart)
+
+                    if Target ~= nil then
+                        FOV.Color = FullSettings.AimBot.Fov.LockColor
+                    else
+                        FOV.Color = FullSettings.AimBot.Fov.Color
+                    end
+
+                    if (FullSettings.AimBot.Values.Toggle == true and lock == false) or (FullSettings.AimBot.Values.Toggle == false and not UIS:IsMouseButtonPressed(FullSettings.AimBot.Values.TriggerKey)) then
+                        FOV.Color = FullSettings.AimBot.Fov.OffColor
+                    end
+
+                    if Target and Target.Character and Target.Character:FindFirstChild(FullSettings.AimBot.Values.HitPart) and lock and camera:WorldToViewportPoint(Target.Character[FullSettings.AimBot.Values.HitPart].Position).Z > 0 then
+                        if not FullSettings.AimBot.Values.Toggle and FullSettings.AimBot.Values.TriggerKey and not UIS:IsMouseButtonPressed(FullSettings.AimBot.Values.TriggerKey) then continue end
+                        camera.CFrame = CFrame.new(camera.CFrame.Position + (Target.Character[FullSettings.AimBot.Values.HitPart].Position - camera.CFrame.Position).Unit * 0.5, Target.Character[FullSettings.AimBot.Values.HitPart].Position)
+                    end
+                end
+            end
+        end
+    end)();
+end
+
+PlayerMovementBox:AddToggle('TPWalkToggle', {
+    Text = 'Enable TPWalk',
+    Default = false,
+})
+
+Toggles.TPWalkToggle:OnChanged(function()
+    Config.TPWalk = Toggles.TPWalkToggle.Value
+end)
+
+PlayerMovementBox:AddSlider('TPWalkSlider', {
+    Text = 'TPWalk Speed',
+    Default = 1,
+    Min = 0.5,
+    Max = 30,
+    Rounding = 1,
+    Compact = false,
+})
+
+Options.TPWalkSlider:OnChanged(function()
+    Config.TPWalkSpeed = Options.TPWalkSlider.Value
+end)
+
+runS.Heartbeat:Connect(function(delta)
+    if Config.TPWalk and lp.Character and lp.Character:FindFirstChild("Humanoid") and lp.Character:FindFirstChild("HumanoidRootPart") then
+        local hum = lp.Character.Humanoid
+        local hrp = lp.Character.HumanoidRootPart
+        if hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * (Config.TPWalkSpeed * delta * 50))
+        end
+    end
+end)
+
+VisualsGroupBox:AddToggle('EspBoxToggle', {
+    Text = 'Esp',
+    Default = false,
+})
+
+Toggles.EspBoxToggle:OnChanged(function()
+    Config.EspBox = Toggles.EspBoxToggle.Value
+end)
+
+local ESP_Boxes = {}
+local function CreateEsp()
+    local objs = {}
+    objs.Box = Drawing.new("Square")
+    objs.Box.Visible = false
+    objs.Box.Color = Color3.fromRGB(255, 255, 255)
+    objs.Box.Thickness = 1
+    objs.Box.Filled = false
+
+    objs.HealthBarBg = Drawing.new("Square")
+    objs.HealthBarBg.Visible = false
+    objs.HealthBarBg.Color = Color3.fromRGB(0, 0, 0)
+    objs.HealthBarBg.Thickness = 1
+    objs.HealthBarBg.Filled = true
+
+    objs.HealthBar = Drawing.new("Square")
+    objs.HealthBar.Visible = false
+    objs.HealthBar.Color = Color3.fromRGB(0, 255, 0)
+    objs.HealthBar.Thickness = 1
+    objs.HealthBar.Filled = true
+
+    objs.Name = Drawing.new("Text")
+    objs.Name.Visible = false
+    objs.Name.Color = Color3.fromRGB(255, 255, 255)
+    objs.Name.Size = 8.5
+    objs.Name.Center = true
+    objs.Name.Outline = true
+
+    return objs
+end
+
+runS.RenderStepped:Connect(function()
+    for _, v in pairs(pl:GetPlayers()) do
+        if v ~= lp and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChild("Humanoid") then
+            if not ESP_Boxes[v] then ESP_Boxes[v] = CreateEsp() end
+            local esp = ESP_Boxes[v]
+            
+            if Config.EspBox and v.Character.Humanoid.Health > 0 then
+                local rootPart = v.Character.HumanoidRootPart
+                local head = v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HitboxHead")
+                
+                if head then
+                    local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+                    local headPos = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                    local legPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+                    
+                    if onScreen then
+                        local height = math.abs(headPos.Y - legPos.Y)
+                        local width = height / 2
+                        local boxSize = Vector2.new(width, height)
+                        local boxPos = Vector2.new(rootPos.X - width / 2, headPos.Y)
+                        
+                        esp.Box.Size = boxSize
+                        esp.Box.Position = boxPos
+                        esp.Box.Visible = true
+                        
+                        local healthPercent = v.Character.Humanoid.Health / v.Character.Humanoid.MaxHealth
+                        esp.HealthBarBg.Size = Vector2.new(4, height + 2)
+                        esp.HealthBarBg.Position = Vector2.new(boxPos.X - 6, boxPos.Y - 1)
+                        esp.HealthBarBg.Visible = true
+                        
+                        esp.HealthBar.Size = Vector2.new(2, height * healthPercent)
+                        esp.HealthBar.Position = Vector2.new(boxPos.X - 5, boxPos.Y + height - (height * healthPercent))
+                        esp.HealthBar.Color = Color3.fromRGB(255 - (healthPercent * 255), healthPercent * 255, 0)
+                        esp.HealthBar.Visible = true
+                        
+                        esp.Name.Text = v.Name .. " [" .. tostring(math.floor((rootPart.Position - camera.CFrame.Position).Magnitude)) .. "m]"
+                        esp.Name.Position = Vector2.new(rootPos.X, headPos.Y - 20)
+                        esp.Name.Visible = true
+                    else
+                        esp.Box.Visible = false
+                        esp.HealthBarBg.Visible = false
+                        esp.HealthBar.Visible = false
+                        esp.Name.Visible = false
+                    end
+                else
+                    esp.Box.Visible = false
+                    esp.HealthBarBg.Visible = false
+                    esp.HealthBar.Visible = false
+                    esp.Name.Visible = false
+                end
+            else
+                if ESP_Boxes[v] then 
+                    ESP_Boxes[v].Box.Visible = false 
+                    ESP_Boxes[v].HealthBarBg.Visible = false
+                    ESP_Boxes[v].HealthBar.Visible = false
+                    ESP_Boxes[v].Name.Visible = false
+                end
+            end
+        elseif ESP_Boxes[v] then
+            ESP_Boxes[v].Box.Visible = false
+            ESP_Boxes[v].HealthBarBg.Visible = false
+            ESP_Boxes[v].HealthBar.Visible = false
+            ESP_Boxes[v].Name.Visible = false
+        end
+    end
+end)
+
+local hiddenTextures = {}
+local originalMaterials = setmetatable({}, {__mode = "k"})
+local originalTextureIDs = setmetatable({}, {__mode = "k"})
+local originalSky = nil
+local originalAtmosphere = nil
+local fixLagConnection = nil
+
+local function ApplyFixLag(v)
+    if v:IsA("BasePart") then
+        if not originalMaterials[v] then
+            originalMaterials[v] = v.Material
+        end
+        v.Material = Enum.Material.SmoothPlastic
+        v.Reflectance = 0
+    end
+    
+    if v:IsA("MeshPart") then
+        if not originalTextureIDs[v] then
+            originalTextureIDs[v] = v.TextureID
+        end
+        v.TextureID = ""
+    elseif v:IsA("Decal") or v:IsA("Texture") then
+        table.insert(hiddenTextures, {Instance = v, Parent = v.Parent})
+        v.Parent = nil
+    end
+end
+
+FixLagGroupBox:AddToggle('FixLagToggle', {
+    Text = 'Fix Lag',
+    Default = false,
+})
+
+Toggles.FixLagToggle:OnChanged(function()
+    local state = Toggles.FixLagToggle.Value
+    local workspace = game:GetService("Workspace")
+    local lighting = game:GetService("Lighting")
+    local terrain = workspace:FindFirstChildOfClass("Terrain")
+    
+    if state then
+        lighting.GlobalShadows = false
+        lighting.FogEnd = 9e9
+        lighting.Brightness = 0
+        lighting.Ambient = Color3.fromRGB(150, 150, 150)
+        lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 150)
+        
+        local sky = lighting:FindFirstChildOfClass("Sky")
+        if sky then
+            originalSky = sky
+            sky.Parent = nil
+        end
+        
+        local chillSky = Instance.new("Sky")
+        chillSky.Name = "ChillGraySky"
+        chillSky.SkyboxBk = "rbxassetid://568317188"
+        chillSky.SkyboxDn = "rbxassetid://568317188"
+        chillSky.SkyboxFt = "rbxassetid://568317188"
+        chillSky.SkyboxLf = "rbxassetid://568317188"
+        chillSky.SkyboxRt = "rbxassetid://568317188"
+        chillSky.SkyboxUp = "rbxassetid://568317188"
+        chillSky.Parent = lighting
+        
+        local atmosphere = lighting:FindFirstChildOfClass("Atmosphere")
+        if atmosphere then
+            originalAtmosphere = atmosphere
+            atmosphere.Parent = nil
+        end
+        
+        if terrain then
+            terrain.WaterWaveSize = 0
+            terrain.WaterWaveSpeed = 0
+            terrain.WaterReflectance = 0
+            terrain.WaterTransparency = 0
+        end
+        
+        for _, v in pairs(workspace:GetDescendants()) do
+            ApplyFixLag(v)
+        end
+        
+        fixLagConnection = workspace.DescendantAdded:Connect(function(v)
+            ApplyFixLag(v)
+        end)
+    else
+        lighting.GlobalShadows = true
+        lighting.Brightness = 1
+        lighting.Ambient = Color3.fromRGB(127, 127, 127)
+        lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        
+        local chillSky = lighting:FindFirstChild("ChillGraySky")
+        if chillSky then
+            chillSky:Destroy()
+        end
+        
+        if originalSky then
+            originalSky.Parent = lighting
+            originalSky = nil
+        end
+        
+        if originalAtmosphere then
+            originalAtmosphere.Parent = lighting
+            originalAtmosphere = nil
+        end
+        
+        if fixLagConnection then
+            fixLagConnection:Disconnect()
+            fixLagConnection = nil
+        end
+        
+        for part, mat in pairs(originalMaterials) do
+            if part and part.Parent then
+                part.Material = mat
+            end
+        end
+        
+        for part, tex in pairs(originalTextureIDs) do
+            if part and part.Parent then
+                part.TextureID = tex
+            end
+        end
+        
+        for _, data in pairs(hiddenTextures) do
+            if data.Instance and data.Parent then
+                data.Instance.Parent = data.Parent
+            end
+        end
+        
+        table.clear(originalMaterials)
+        table.clear(originalTextureIDs)
+        table.clear(hiddenTextures)
+    end
+end)
+
+local constructingWeapon, viewingProfile = nil, nil
+local lastUsedWeapon = nil
+local equipped, favorites = {}, {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local player = pl.LocalPlayer
+local playerScripts = player.PlayerScripts
+local controllers = playerScripts:WaitForChild("Controllers", 10)
+local saveFile = "Symbol.gg/config.json"
+
+local EnumLibrary = require(ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 10))
+if EnumLibrary then EnumLibrary:WaitForEnumBuilder() end
+local CosmeticLibrary = require(ReplicatedStorage.Modules:WaitForChild("CosmeticLibrary", 10))
+local ItemLibrary = require(ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 10))
+local DataController = require(controllers:WaitForChild("PlayerDataController", 10))
+
+local function cloneCosmetic(name, cosmeticType, options)
+    local baseCos = CosmeticLibrary.Cosmetics[name]
+    if not baseCos then return nil end
+    local data = {}
+    for key, value in pairs(baseCos) do data[key] = value end
+    data.Name = name
+    data.Type = data.Type or cosmeticType
+    data.Seed = data.Seed or math.random(1, 1000000)
+    if EnumLibrary then
+        local success, enumId = pcall(EnumLibrary.ToEnum, EnumLibrary, name)
+        if success and enumId then data.Enum, data.ObjectID = enumId, data.ObjectID or enumId end
+    end
+    if options then
+        if options.inverted ~= nil then data.Inverted = options.inverted end
+        if options.favoritesOnly ~= nil then data.OnlyUseFavorites = options.favoritesOnly end
+    end
+    return data
+end
+
+local function saveConfig()
+    if not writefile then return end
+    pcall(function()
+        local config = {equipped = {}, favorites = favorites}
+        for weapon, cosmetics in pairs(equipped) do
+            config.equipped[weapon] = {}
+            for cosmeticType, cosmeticData in pairs(cosmetics) do
+                if cosmeticData and cosmeticData.Name then
+                    config.equipped[weapon][cosmeticType] = {
+                        name = cosmeticData.Name, seed = cosmeticData.Seed, inverted = cosmeticData.Inverted
+                    }
+                end
+            end
+        end
+        makefolder("Symbol.gg")
+        writefile(saveFile, HttpService:JSONEncode(config))
+    end)
+end
+
+local function loadConfig()
+    if not readfile or not isfile or not isfile(saveFile) then return end
+    pcall(function()
+        local config = HttpService:JSONDecode(readfile(saveFile))
+        if config.equipped then
+            for weapon, cosmetics in pairs(config.equipped) do
+                equipped[weapon] = {}
+                for cosmeticType, cosmeticData in pairs(cosmetics) do
+                    local cloned = cloneCosmetic(cosmeticData.name, cosmeticType, {inverted = cosmeticData.inverted})
+                    if cloned then cloned.Seed = cosmeticData.seed equipped[weapon][cosmeticType] = cloned end
+                end
+            end
+        end
+        favorites = config.favorites or {}
+    end)
+end
+
+SkinGroupBox:AddToggle('UnlockSkinsToggle', {
+    Text = 'Unlock All Skins',
+    Default = false,
+})
+
+Toggles.UnlockSkinsToggle:OnChanged(function()
+    Config.UnlockSkins = Toggles.UnlockSkinsToggle.Value
+end)
+
+CosmeticLibrary.OwnsCosmeticNormally = function() return Config.UnlockSkins and true or false end
+CosmeticLibrary.OwnsCosmeticUniversally = function() return Config.UnlockSkins and true or false end
+CosmeticLibrary.OwnsCosmeticForWeapon = function() return Config.UnlockSkins and true or false end
+
+local originalOwnsCosmetic = CosmeticLibrary.OwnsCosmetic
+CosmeticLibrary.OwnsCosmetic = function(self, inventory, name, weapon)
+    if Config.UnlockSkins then
+        if name:find("MISSING_") then return originalOwnsCosmetic(self, inventory, name, weapon) end
+        return true
+    end
+    return originalOwnsCosmetic(self, inventory, name, weapon)
+end
+
+local originalGet = DataController.Get
+DataController.Get = function(self, key)
+    local data = originalGet(self, key)
+    if Config.UnlockSkins then
+        if key == "CosmeticInventory" then
+            local proxy = {}
+            if data then for k, v in pairs(data) do proxy[k] = v end end
+            return setmetatable(proxy, {__index = function() return true end})
+        end
+        if key == "FavoritedCosmetics" then
+            local result = data and table.clone(data) or {}
+            for weapon, favs in pairs(favorites) do
+                result[weapon] = result[weapon] or {}
+                for name, isFav in pairs(favs) do result[weapon][name] = isFav end
+            end
+            return result
+        end
+    end
+    return data
+end
+
+local originalGetWeaponData = DataController.GetWeaponData
+DataController.GetWeaponData = function(self, weaponName)
+    local data = originalGetWeaponData(self, weaponName)
+    if not data then return nil end
+    if not Config.UnlockSkins then return data end
+
+    local merged = {}
+    for key, value in pairs(data) do merged[key] = value end
+    merged.Name = weaponName
+    if equipped[weaponName] then
+        for cosmeticType, cosmeticData in pairs(equipped[weaponName]) do merged[cosmeticType] = cosmeticData end
+    end
+    return merged
+end
+
+local FighterController
+pcall(function() FighterController = require(controllers:WaitForChild("FighterController", 10)) end)
+if hookmetamethod then
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    local dataRemotes = remotes and remotes:FindFirstChild("Data")
+    local equipRemote = dataRemotes and dataRemotes:FindFirstChild("EquipCosmetic")
+    local favoriteRemote = dataRemotes milestone = dataRemotes and dataRemotes:FindFirstChild("FavoriteCosmetic")
+    local replicationRemotes = remotes and remotes:FindFirstChild("Replication")
+    local fighterRemotes = replicationRemotes and replicationRemotes:FindFirstChild("Fighter")
+    local useItemRemote = fighterRemotes and fighterRemotes:FindFirstChild("UseItem")
+    if equipRemote then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            if getnamecallmethod() ~= "FireServer" then return oldNamecall(self, ...) end
+            local args = {...}
+            if useItemRemote and self == useItemRemote then
+                local objectID = args[1]
+                if FighterController then
+                    pcall(function()
+                        local fighter = FighterController:GetFighter(player)
+                        if fighter and fighter.Items then
+                            for _, item in pairs(fighter.Items) do
+                                if item:Get("ObjectID") == objectID then
+                                    lastUsedWeapon = item.Name
+                                    break
+                                end
+                            end
+                        end
+                    end)
+                end
+            end            
+            if self == equipRemote and Config.UnlockSkins then
+                local weaponName, cosmeticType, cosmeticName, options = args[1], args[2], args[3], args[4] or {}                
+                if cosmeticName and cosmeticName ~= "None" and cosmeticName ~= "" then
+                    local inventory = DataController:Get("CosmeticInventory")
+                    if inventory and rawget(inventory, cosmeticName) then return oldNamecall(self, ...) end
+                end                
+                equipped[weaponName] = equipped[weaponName] or {}                
+                if not cosmeticName or cosmeticName == "None" or cosmeticName == "" then
+                    equipped[weaponName][cosmeticType] = nil
+                    if not next(equipped[weaponName]) then equipped[weaponName] = nil end
+                else
+                    local cloned = cloneCosmetic(cosmeticName, cosmeticType, {inverted = options.IsInverted, favoritesOnly = options.OnlyUseFavorites})
+                    if cloned then equipped[weaponName][cosmeticType] = cloned end
+                end                
+                task.defer(function()
+                    pcall(function() DataController.CurrentData:Replicate("WeaponInventory") end)
+                    task.wait(0.2)
+                    saveConfig()
+                end)
+                return
+            end 
+            if self == favoriteRemote and Config.UnlockSkins then
+                favorites[args[1]] = favorites[args[1]] or {}
+                favorites[args[1]][args[2]] = args[3] or nil
+                saveConfig()
+                task.spawn(function() pcall(function() DataController.CurrentData:Replicate("FavoritedCosmetics") end) end)
+                return
+            end            
+            return oldNamecall(self, ...)
+        end)
+    end
+end
+
+local ClientItem
+pcall(function() ClientItem = require(player.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem) end)
+if ClientItem and ClientItem._CreateViewModel then
+    local originalCreateViewModel = ClientItem._CreateViewModel
+    ClientItem._CreateViewModel = function(self, viewmodelRef)
+        local weaponName = self.Name
+        local weaponPlayer = self.ClientFighter and self.ClientFighter.Player
+        constructingWeapon = (weaponPlayer == player) and weaponName or nil    
+        if Config.UnlockSkins and weaponPlayer == player and equipped[weaponName] and equipped[weaponName].Skin and viewmodelRef then
+            local dataKey, skinKey, nameKey = self:ToEnum("Data"), self:ToEnum("Skin"), self:ToEnum("Name")
+            if viewmodelRef[dataKey] then
+                viewmodelRef[dataKey][skinKey] = equipped[weaponName].Skin
+                viewmodelRef[dataKey][nameKey] = equipped[weaponName].Skin.Name
+            elseif viewmodelRef.Data then
+                viewmodelRef.Data.Skin = equipped[weaponName].Skin
+                viewmodelRef.Data.Name = equipped[weaponName].Skin.Name
+            end
+        end
+        local result = originalCreateViewModel(self, viewmodelRef)
+        constructingWeapon = nil
+        return result
+    end
+end
+
+local viewModelModule = player.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
+if viewModelModule then
+    local ClientViewModel = require(viewModelModule)
+    if ClientViewModel.GetWrap then
+        local originalGetWrap = ClientViewModel.GetWrap
+        ClientViewModel.GetWrap = function(self)
+            local weaponName = self.ClientItem and self.ClientItem.Name
+            local weaponPlayer = self.ClientItem and self.ClientItem.ClientFighter and self.ClientItem.ClientFighter.Player
+            if Config.UnlockSkins and weaponName and weaponPlayer == player and equipped[weaponName] and equipped[weaponName].Wrap then
+                return equipped[weaponName].Wrap
+            end
+            return originalGetWrap(self)
+        end
+    end
+    local originalNew = ClientViewModel.new
+    ClientViewModel.new = function(replicatedData, clientItem)
+        local weaponPlayer = clientItem.ClientFighter and clientItem.ClientFighter.Player
+        local weaponName = constructingWeapon or clientItem.Name
+        if Config.UnlockSkins and weaponPlayer == player and equipped[weaponName] then
+            local ReplicatedClass = require(ReplicatedStorage.Modules.ReplicatedClass)
+            local dataKey = ReplicatedClass:ToEnum("Data")
+            replicatedData[dataKey] = replicatedData[dataKey] or {}
+            local cosmetics = equipped[weaponName]
+            if cosmetics.Skin then replicatedData[dataKey][ReplicatedClass:ToEnum("Skin")] = cosmetics.Skin end
+            if cosmetics.Wrap then replicatedData[dataKey][ReplicatedClass:ToEnum("Wrap")] = cosmetics.Wrap end
+            if cosmetics.Charm then replicatedData[dataKey][ReplicatedClass:ToEnum("Charm")] = cosmetics.Charm end
+        end
+        local result = originalNew(replicatedData, clientItem)
+        if Config.UnlockSkins and weaponPlayer == player and equipped[weaponName] and equipped[weaponName].Wrap and result._UpdateWrap then
+            result:_UpdateWrap()
+            task.delay(0.1, function() if not result._destroyed then result:_UpdateWrap() end end)
+        end
+        return result
+    end
+end
+
+local originalGetViewModelImage = ItemLibrary.GetViewModelImageFromWeaponData
+ItemLibrary.GetViewModelImageFromWeaponData = function(self, weaponData, highRes)
+    if not weaponData or not Config.UnlockSkins then return originalGetViewModelImage(self, weaponData, highRes) end
+    local weaponName = weaponData.Name
+    local shouldShowSkin = (weaponData.Skin and equipped[weaponName] and weaponData.Skin == equipped[weaponName].Skin) or (viewingProfile == player and equipped[weaponName] and equipped[weaponName].Skin)
+    if shouldShowSkin and equipped[weaponName] and equipped[weaponName].Skin then
+        local skinInfo = self.ViewModels[equipped[weaponName].Skin.Name]
+        if skinInfo then return skinInfo[highRes and "ImageHighResolution" or "Image"] or skinInfo.Image end
+    end
+    return originalGetViewModelImage(self, weaponData, highRes)
+end
+
+pcall(function()
+    local ViewProfile = require(player.PlayerScripts.Modules.Pages.ViewProfile)
+    if ViewProfile and ViewProfile.Fetch then
+        local originalFetch = ViewProfile.Fetch
+        ViewProfile.Fetch = function(self, targetPlayer)
+            viewingProfile = targetPlayer
+            return originalFetch(self, targetPlayer)
+        end
+    end
+end)
+
+local ClientEntity
+pcall(function() ClientEntity = require(player.PlayerScripts.Modules.ClientReplicatedClasses.ClientEntity) end)
+if ClientEntity and ClientEntity.ReplicateFromServer then
+    local originalReplicateFromServer = ClientEntity.ReplicateFromServer
+    ClientEntity.ReplicateFromServer = function(self, action, ...)
+        if Config.UnlockSkins and action == "FinisherEffect" then
+            local args = {...}
+            local killerName = args[3]     
+            local decodedKiller = killerName
+            if type(killerName) == "userdata" and EnumLibrary and EnumLibrary.FromEnum then
+                local ok, decoded = pcall(EnumLibrary.FromEnum, EnumLibrary, killerName)
+                if ok and decoded then decodedKiller = decoded end
+            end            
+            local isOurKill = tostring(decodedKiller) == player.Name or tostring(decodedKiller):lower() == player.Name:lower()            
+            if isOurKill and lastUsedWeapon and equipped[lastUsedWeapon] and equipped[lastUsedWeapon].Finisher then
+                local finisherData = equipped[lastUsedWeapon].Finisher
+                local finisherEnum = finisherData.Enum                
+                if not finisherEnum and EnumLibrary then
+                    local ok, result = pcall(EnumLibrary.ToEnum, EnumLibrary, finisherData.Name)
+                    if ok and result then finisherEnum = result end
+                end                
+                if finisherEnum then
+                    args[1] = finisherEnum
+                    return originalReplicateFromServer(self, action, unpack(args))
+                end
+            end
+        end        
+        return originalReplicateFromServer(self, action, ...)
+    end
+end
+
+loadConfig()
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings() 
+SaveManager:SetIgnoreIndexes({ 'MenuKeybind' }) 
+
+ThemeManager:SetFolder('GalaxyHubz')
+SaveManager:SetFolder('GalaxyHubz/Rivals')
+
+SaveManager:BuildConfigSection(Tabs.UISettings) 
+ThemeManager:ApplyToTab(Tabs.UISettings)
+
+local MenuGroup = Tabs.UISettings:AddLeftGroupbox('Menu')
+MenuGroup:AddButton('Unload Menu', function() Library:Unload() end)
+MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'RightControl', NoUI = true, Text = 'Menu keybind' }) 
+Library.ToggleKeybind = Options.MenuKeybind
+
+Library:SetWatermark('GalaxyHubz by Era_')
